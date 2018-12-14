@@ -1,8 +1,13 @@
 #include "Tasks.h"
 
-void Prompt(const char path[], const char prompt)
+char * GetPATH()
 {
-	printf(COLOR_FOLDER "%c%s" COLOR_RESET "%c", '~', path, prompt);
+	return getenv("PATH");
+}
+
+void Prompt(const char user[], const char computer[], const char path[], const char prompt)
+{
+	printf(COLOR_USER "%s@%s" COLOR_FOLDER "~%s" COLOR_RESET "%c",  user, computer, path, prompt);
 	fflush(stdout);
 }
 

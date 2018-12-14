@@ -1,9 +1,10 @@
-#ifndef _TASKS_
-#define _TASKS_
+#ifndef _MICROSHELL_TASKS_
+#define _MICROSHELL_TASKS_
 
 #include "OutputUtility.h"
 #include <string.h>
 #include <malloc.h>
+#include "System.h"
 
 struct Path
 {
@@ -13,12 +14,14 @@ struct Path
 
 typedef struct Path path;
 
-void Prompt(const char path[], const char prompt);
+void Prompt(const char user[], const char computer[], const char path[], const char prompt);
 
 char ** ParsePATH(const char PATH[]);
 
 char ** ParseCommand(const char Command[]);
 
+char * GetPATH();
+
 path _PathMaxLength(const char PATH[]);
 
-#endif // _TASKS_;
+#endif // _MICROSHELL_TASKS_;

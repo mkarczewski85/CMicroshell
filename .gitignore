@@ -1,6 +1,10 @@
 .vs/
+.vscode/
 Microshell.sln
 Microshell.vcxproj
 Microshell.vcxproj.filters
 Microshell.vcxproj.user
 microshell
+*.*
+!*.[hc]
+![Mm]akefile
