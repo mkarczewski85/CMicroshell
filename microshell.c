@@ -14,6 +14,7 @@
 #include <grp.h>
 #include <time.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <error.h>
 #include <errno.h>
 
@@ -99,12 +100,15 @@ int microshell_help(char *args[]);
 
 int microshell_ls(char *args[]);
 
+int microshell_touch(char *args[]);
+
 string built_in_names[] = 
 {
 	"cd",
 	"help",
 	"exit",
-	"ls"
+	"ls",
+	"touch"
 };
 
 int (*built_in[])(char *args[]) = 
@@ -112,7 +116,8 @@ int (*built_in[])(char *args[]) =
 	&microshell_cd,
 	&microshell_help,
 	&microshell_exit,
-	&microshell_ls
+	&microshell_ls,
+	&microshell_touch
 };
 
 int built_in_num()
@@ -746,12 +751,58 @@ int microshell_ls(char *args[])
 	return _SUCCESS;
 }
 
-int microshell_touch_help()
+void microshell_touch_help()
 {
-	return _SUCCESS;
+	printf(CLEAR_SCREEN);
+	printf(FONT_BOLD "Microshell touch help.\n" COLOR_RESET);
+	printf(COLOR_IMPORTANT "Command:\n" COLOR_RESET "\ttouch [path] [-h][content]\n");
+	printf(FONT_BOLD "Options:\n" COLOR_RESET);
+	printf("\t-h | display this help\n");
+	printf(FONT_BOLD "Path:\n" COLOR_RESET);
+	printf("\tIf contains only filename file will be created in current directory\n");
+	printf("\telse (if possible) file will be created in given folder.\n");
+	printf(FONT_BOLD "Content:\n" COLOR_RESET);
+	printf("\tOptional content of created file. Have to be quoted in \"\" or \'\'\n");
+	printf("\tand cannot contain same quotes inside e.g. you can type \"My 'new' text\"\n");
+	printf("\tbut cannot \"My \"new\" text\".\n");
 }
 
 int microshell_touch(char *args[])
 {
+	int fd, status, i;
+	if(!args[1])
+	{
+		perror("No filename");
+		return _FAIL;
+	}
+
+	if(!strcmp(args[1], "-h"))
+	{
+		microshell_touch_help();
+		return _SUCCESS;
+	}
+
+	fd = open(args[1], O_WRONLY | O_CREAT | O_EXCL, 0666);
+	if(fd == -1)
+	{
+		perror("Cannot create file");
+		return _FAIL;
+	}
+	printf("Should've been written: %s\n", args[2]);
+	if(args[2] != NULL)
+		for(i = 0; i < strlen(args[2]); i++)
+		{
+			if((status = write(fd, &args[2][i], 1)) == -1)
+			{
+				perror("Cannot write to file");
+			}
+		}
+		
+	status = close(fd);
+	if(status == -1)
+	{
+		perror("Cannot close file");
+		return _FAIL;
+	}
 	return _SUCCESS;
 }
