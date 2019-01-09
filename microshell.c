@@ -49,21 +49,17 @@
 
 typedef char* string;
 
-struct Command
+typedef struct Command
 {
 	string name;
 	string args[];
-};
+}command;
 
-typedef struct Command command;
-
-enum Bool
+typedef enum Bool
 {
 	false = 0,
 	true = 1
-};
-
-typedef enum Bool bool;
+}bool;
 
 /* Allocates memory for command with argsCount arguments */
 command *_commalloc(const int argsCount);
@@ -83,14 +79,19 @@ command *Parse(string _parsed);
 /* Invokes passed command if possible. */
 int Invoke(command *comm);
 
+/* Helper function that invokes external program */
 int exec_extern(const command *comm);
 
 /* Helper function counting items divided by separator in string */
 int _ItemsCount(const string _items, const char _delimeters[]);
 
+/* Helper function that trim whitespaces around string */
 string __trimaround(const string _source);
 
+/* Advanced Tokenize divides _source into parts divided by delimeter if not quoted in _quotes */
 string *_advtok(const string _source, const char _delimeters[], int *_elements);
+
+/* Built-in functions */
 
 int microshell_cd(char *args[]);
 
@@ -181,6 +182,7 @@ command *_commalloc(const int argsCount)
 
 int _commfree(command *comm, const int argsCount)
 {
+	errno = 0;
 	int i = 0;
 
 	free(comm->name);
@@ -194,14 +196,15 @@ int _commfree(command *comm, const int argsCount)
 
 	free(comm);
 	comm = NULL;
-	perror("After freeing comm");
+	if(errno)
+		perror("Error");
 	return _SUCCESS;
 }
 
 int Prompt(string _user, string _host, const char symbol)
 {
 	errno = 0;
-	char path[PATH_MAX];
+	char path[PATH_MAX + 1];
 	getcwd(path, PATH_MAX);
 	gethostname(_host, HOST_NAME_MAX);
 	getlogin_r(_user, LOGIN_NAME_MAX);
@@ -217,6 +220,7 @@ int Prompt(string _user, string _host, const char symbol)
 
 int Read(string comm)
 {
+	errno = 0;
 	int current = -5;
 	char _tmp[2] = {0, 0};
 	while((current = fgetc(stdin)))
@@ -232,11 +236,14 @@ int Read(string comm)
 			strcat(comm, _tmp);
 		}
 	}
+	if(errno)
+		perror("Error");
 	return _FAIL;
 }
 
 command *Parse(string _parsed)
 {
+	errno = 0;
 	int elements,
 		iter;
 	string *commands;
@@ -267,6 +274,8 @@ command *Parse(string _parsed)
 	}
 	_comm->args[elements] = NULL;
 	free(commands);
+	if(errno)
+		perror("Error");
 	return _comm;
 }
 
@@ -284,6 +293,7 @@ int Invoke(command *comm)
 
 int exec_extern(const command *comm)
 {
+	errno = 0;
 	int status = 0, check = 0;
 	pid_t pid = -1;
 	pid = fork();
@@ -292,6 +302,7 @@ int exec_extern(const command *comm)
 	if(pid < 0)
 	{
 		perror("Fork error");
+		return _FAIL;
 	}
 	/* Child */
 	else if(pid == 0)
@@ -299,13 +310,17 @@ int exec_extern(const command *comm)
 		check = execvp(comm->name, comm->args);
 		
 		if(check == -1)
+		{
 			perror("Execution error");
+			return _FAIL;
+		}
 	}
 	else
 	{
 		waitpid(pid, &status, WUNTRACED);
 	}
-
+	if(errno)
+		perror("Error");
 	return status;
 }
 
@@ -322,7 +337,6 @@ int _ItemsCount(const string _items, const char _delimeters[])
     return ++_count;
 }
 
-/* Advanced Tokenize divides _source into parts divided by delimeter if not quoted in _quotes */
 string *_advtok(const string _source, const char _quotes[], int *_elements)
 {
 	const char _delimeters[] = {' ', '\t', '\r', '\n', '\v', '\f', '\0'};
@@ -470,9 +484,9 @@ string *_advtok(const string _source, const char _quotes[], int *_elements)
 	return _out;
 }
 
-/* Trim white spaces before first and after last character. */
 string __trimaround(const string _source)
 {
+	errno = 0;
 	const char _delimeters[] = {' ', '\t', '\r', '\n', '\v', '\f'};
 
 	int pos = 0,
@@ -510,6 +524,12 @@ string __trimaround(const string _source)
 	{
 		res[pos] = *current;
 	}
+	if(errno)
+	{
+		free(res);
+		perror("Error");
+		return NULL;
+	}
 	return res;
 }
 
@@ -521,7 +541,7 @@ int microshell_cd(char *args[])
 
 	if(!args[1])
 	{
-		printf("Error: no arguments for cd");
+		printf("Error: no arguments for cd\n");
 		return _FAIL;
 	}
 	if((sub = strstr(args[1], "~/")) != NULL)
@@ -537,10 +557,10 @@ int microshell_cd(char *args[])
 		path = strcpy(path, args[1]);
 	}
 	status = chdir(path);
-	if(status == -1)
+	if(status == -1 || errno)
 	{
+		free(path);
 		perror("Error");
-		errno = 0;
 		return _FAIL;
 	}
 	free(path);
@@ -558,7 +578,7 @@ int microshell_help(char *args[])
 	printf(CLEAR_SCREEN);
 	printf("\x1B[29G");
 	printf(COLOR_IMPORTANT "Microshell (2018/2019)\n" COLOR_RESET);
-	printf(COLOR_HIDDEN "Author: " COLOR_RESET "Jakub Kwiatkowski" "\x1B[61G" COLOR_HIDDEN "version: " COLOR_RESET "2019.01.05\n");
+	printf(COLOR_HIDDEN "Author: " COLOR_RESET "Jakub Kwiatkowski" "\x1B[61G" COLOR_HIDDEN "version: " COLOR_RESET "2019.01.10\n");
 	printf("This Microshell is simple Linux/Unix shell. \nIt allows you to execute programs right here in command line.\n");
 	printf("Arguments can be quoted in" FONT_BOLD " \"\" or \'\'" COLOR_RESET ". Type " FONT_BOLD "exit" COLOR_RESET " to exit microshell.\nEnjoy your new supertool!\n");
 
@@ -603,9 +623,10 @@ string __getnamefromGID(gid_t GID)
 
 int microshell_ls(char *args[])
 {
+	errno = 0;
 	const char _delimeters[] = {' ', '\t', '\r', '\n', '\v', '\f'};
 
-	string path, filepath = calloc(PATH_MAX + 1, sizeof(char));
+	string path = calloc(PATH_MAX - 256, sizeof(char)), filepath = calloc(PATH_MAX + 1, sizeof(char));
 	string COLOR  = COLOR_FILE;
 	string format = calloc(256, sizeof(char));
 	struct tm *mod_date;
@@ -659,18 +680,30 @@ int microshell_ls(char *args[])
 						break;
 					case 3:
 						microshell_ls_help();
-						break;
+						return _SUCCESS;
 				}
 			}
 		}
 		i++;
 	}
 
-	path = args[1];
-	if(!path)
+	char *sub = NULL;
+
+	if(!args[1])
 		path = getcwd(NULL, 0);
+	else if((sub = strstr(args[1], "~/")) != NULL)
+	{
+		sub += 2;
+		path = strcat(path, getenv("HOME"));
+		path = strcat(path, "/");
+		path = strcat(path, sub);
+	}
+	else
+		path = strncpy(path, args[1], PATH_MAX - 257);
+
 	if(!(directory = opendir(path)))
 	{
+		errno = 0;
 		path = getcwd(NULL, 0);
 		if(!path)
 		{
@@ -698,12 +731,13 @@ int microshell_ls(char *args[])
 			else
 				whitespace_name = false;
 		}
-		filepath = strcat(filepath, path);
-		filepath = strcat(filepath, "/");
-		filepath = strcat(filepath, entry->d_name);
+		filepath = strncat(filepath, path, PATH_MAX - 257);
+		filepath = strncat(filepath, "/", 1);
+		filepath = strncat(filepath, entry->d_name, 256);
 		if(stat(filepath, &entry_stat) == -1)
 		{
 			perror("Cannot read file properties");
+			errno = 0;
 			printf("%s\n", entry->d_name);
 			continue;
 		}
@@ -720,9 +754,9 @@ int microshell_ls(char *args[])
 		if(display.l)
 		{
 			format = strcat(format, "%s %s\t%d\t%.24s\t");
-			format = strcat(format, COLOR);
+			format = strncat(format, COLOR, 118);
 			format = (display.q || whitespace_name) ? strcat(format, "\"%s\"\n") : strcat(format, "%s\n");
-			format = strcat(format, COLOR_RESET);
+			format = strncat(format, COLOR_RESET, 118);
 
 			fprops.user = __getnamefromUID(entry_stat.st_uid);
 			fprops.group = __getnamefromGID(entry_stat.st_gid);
@@ -735,9 +769,9 @@ int microshell_ls(char *args[])
 		}
 		else
 		{
-			format = strcat(format, COLOR);
+			format = strncat(format, COLOR, 125);
 			format = (display.q || whitespace_name) ? strcat(format, "\"%s\"\n") : strcat(format, "%s\n");
-			format = strcat(format, COLOR_RESET);
+			format = strncat(format, COLOR_RESET, 125);
 
 			printf(format, entry->d_name);
 		}
@@ -747,7 +781,10 @@ int microshell_ls(char *args[])
 	}
 
 	free(format);
+	free(path);
 	free(filepath);
+	if(errno)
+		perror("Error");
 	return _SUCCESS;
 }
 
@@ -769,6 +806,7 @@ void microshell_touch_help()
 
 int microshell_touch(char *args[])
 {
+	errno = 0;
 	int fd, status, i;
 	if(!args[1])
 	{
@@ -788,7 +826,6 @@ int microshell_touch(char *args[])
 		perror("Cannot create file");
 		return _FAIL;
 	}
-	printf("Should've been written: %s\n", args[2]);
 	if(args[2] != NULL)
 		for(i = 0; i < strlen(args[2]); i++)
 		{
@@ -804,5 +841,7 @@ int microshell_touch(char *args[])
 		perror("Cannot close file");
 		return _FAIL;
 	}
+	if(errno)
+		perror("Error");
 	return _SUCCESS;
 }
