@@ -51,9 +51,10 @@ typedef char* string;
 
 typedef struct Command
 {
-	string name;
-	string args[];
-}command;
+	size_t elements;
+	char name[PATH_MAX];
+	string args[256];
+}Command;
 
 typedef enum Bool
 {
@@ -61,11 +62,11 @@ typedef enum Bool
 	true = 1
 }bool;
 
-/* Allocates memory for command with argsCount arguments */
-command *_commalloc(const int argsCount);
+/* Allocates memory for Command with argsCount arguments */
+int _commalloc(Command *comm, const int argsCount);
 
-/* Deallocates memory allocated by _commalloc for command with argsCount arguments. */
-int _commfree(command *_source, int argsCount);
+/* Deallocates memory allocated by _commalloc for Command with argsCount arguments. */
+int _commfree(Command *_source);
 
 /* Displays prompt for user containing username, computername, current path and prompt symbol. */
 int Prompt(string _user, string _host, const char symbol);
@@ -73,14 +74,17 @@ int Prompt(string _user, string _host, const char symbol);
 /* Reads commands from stdin */
 int Read(string comm);
 
-/* Parses _parsed to command */
-command *Parse(string _parsed);
+/* Parses _parsed to Command */
+int Parse(string _parsed, Command *_dest);
 
-/* Invokes passed command if possible. */
-int Invoke(command *comm);
+/* Invokes passed Command if possible. */
+int Invoke(Command comm);
 
 /* Helper function that invokes external program */
-int exec_extern(const command *comm);
+int exec_extern(const Command comm);
+
+/* Helper function searching in PATH for given program */
+string _lookforinPATH(string name);
 
 /* Helper function counting items divided by separator in string */
 int _ItemsCount(const string _items, const char _delimeters[]);
@@ -89,7 +93,7 @@ int _ItemsCount(const string _items, const char _delimeters[]);
 string __trimaround(const string _source);
 
 /* Advanced Tokenize divides _source into parts divided by delimeter if not quoted in _quotes */
-string *_advtok(const string _source, const char _delimeters[], int *_elements);
+string *_advtok(const string _source, const char _delimeters[], int *_elements, string delimeters);
 
 /* Built-in functions */
 
@@ -102,6 +106,8 @@ int microshell_help(char *args[]);
 int microshell_ls(char *args[]);
 
 int microshell_touch(char *args[]);
+
+int microshell_ps(char *args[]);
 
 string built_in_names[] = 
 {
@@ -129,7 +135,7 @@ int built_in_num()
 int main()
 {
 	string username = NULL, hostname = NULL, input = NULL;
-	command *comm = NULL;
+	Command comm;
 
 	username = calloc(LOGIN_NAME_MAX + 1, sizeof(char));
 	hostname = calloc(HOST_NAME_MAX + 1, sizeof(char));
@@ -137,65 +143,97 @@ int main()
 	if(!username || !hostname || !input)
 		perror("Cannot allocate memory");
 
-	while(1)
+	while(true)
 	{
 		Prompt(username, hostname, '$');
 		Read(input);
-		comm = Parse(__trimaround(input));
-		if(!comm)
+		if(Parse(__trimaround(input), &comm) == _FAIL)
+		{
 			continue;
+		}
+		printf("Before Invoke\n");
 		Invoke(comm);
+		printf("After Invoke\n");
 		memset(username, 0, LOGIN_NAME_MAX);
 		memset(hostname, 0, HOST_NAME_MAX);
 		memset(input, 0, PATH_MAX);
+		_commfree(&comm);
 	}
 
 	free(username);
 	free(hostname);
+	free(input);
 	fputc('\n', stdout);
 
 	return 0;
 }
 
-command *_commalloc(const int argsCount)
+int _commalloc(Command *comm, const int argsCount)
 {
 	int i = 0;
-	command *comm = (command*)malloc(sizeof(command) + argsCount * sizeof(string));
 
-	comm->name = malloc((_STRING_WORD_SIZE + 1) * sizeof(char));
+	if(argsCount > 255)
+	{
+		printf("Too many arguments. Limit is 255\n");
+		return _FAIL;
+	}
+
+	comm->elements = argsCount;
 
 	if(!argsCount)
-		return comm;
+		return _SUCCESS;
 
 	for(i = 0; i < argsCount; i++)
 	{
 		comm->args[i] = malloc((_STRING_WORD_SIZE + 1) * sizeof(char));
 		if(!(comm->args[i]))
-			return NULL;
+		{
+			perror("Allocation error occured");
+			return _FAIL;
+		}
 	}
 
-	if(!comm)
-		return NULL;
-
-	return comm;
+	return _SUCCESS;
 }
 
-int _commfree(command *comm, const int argsCount)
+/*int _commrealloc(Command *comm, const int argsAdded)
+{
+	int i = 0;
+	int args = comm->elements + argsAdded;
+
+	if(args > 255)
+	{
+		printf("Too many arguments. Limit is 255.\n");
+		return _FAIL;
+	}
+
+	for(i = comm->elements; i < args; i++)
+	{
+		comm->args[i] = calloc(_STRING_WORD_SIZE + 1, sizeof(char));
+		if(!comm->args[i])
+		{
+			perror("Allocation error occured");
+			return _FAIL;
+		}
+	}
+	
+	comm->elements = args;
+
+	return _SUCCESS;
+	
+}*/
+
+int _commfree(Command *_source)
 {
 	errno = 0;
 	int i = 0;
-
-	free(comm->name);
-	comm->name = NULL;
-
-	for(i = 0; i < argsCount; i++)
+	memset(_source->name, 0, sizeof(_source->name));
+	for(i = 0; i < _source->elements; i++)
 	{
-		free(comm->args[i]);
-		comm->args[i] = NULL;
+		free(_source->args[i]);
+		_source->args[i] = NULL;
 	}
 
-	free(comm);
-	comm = NULL;
 	if(errno)
 		perror("Error");
 	return _SUCCESS;
@@ -241,57 +279,70 @@ int Read(string comm)
 	return _FAIL;
 }
 
-command *Parse(string _parsed)
+int Parse(string _parsed, Command *_dest)
 {
 	errno = 0;
 	int elements,
 		iter;
 	string *commands;
-	command *_comm = NULL;
-	commands = _advtok(_parsed, "\'\"", &elements);
+	commands = _advtok(_parsed, "\'\"", &elements, "");
 	if(!elements)
 	{
 		free(commands);
-		return NULL;
+		return _FAIL;
 	}
-	_comm = _commalloc(elements + 1);
-	_comm->name = commands[0];
+	if(_commalloc(_dest, elements) == _FAIL)
+	{
+		perror("Error");
+	}
+	strcpy(_dest->name, commands[0]);
 
 	for(iter = 0; iter < elements; iter++)
 	{
 		if(strlen(commands[iter]) + 1 >= _STRING_WORD_SIZE)
 		{
-			_comm->args[iter] = realloc(_comm->args[iter], (strlen(commands[iter]) + 1) * sizeof(char));
-			printf("Test\n");
-			if(!_comm->args[iter])
+			_dest->args[iter] = realloc(_dest->args[iter], (strlen(commands[iter]) + 1) * sizeof(char));
+			if(!_dest->args[iter])
 			{
-				return (command*)_FAIL;
+				perror("Error");
+				free(commands);
+				return _FAIL;
 			}
-			memset(_comm->args[iter], 0, strlen(commands[iter]) + 1);
+			memset(_dest->args[iter], 0, strlen(commands[iter]) + 1);
 		}
-		if(!strcpy(_comm->args[iter], commands[iter]))
-			return (command*)_FAIL;
+		if(!strcpy(_dest->args[iter], commands[iter]))
+		{
+			perror("Error");
+			free(commands);
+			return _FAIL;
+		}
 	}
-	_comm->args[elements] = NULL;
+	_dest->args[elements] = NULL;
 	free(commands);
 	if(errno)
 		perror("Error");
-	return _comm;
+	return _SUCCESS;
 }
 
-int Invoke(command *comm)
+int Invoke(Command comm)
 {
+	string _tmp = NULL;
 	int i, num = built_in_num();
 	for(i = 0; i < num; i++)
 	{
-		if(!strcmp(comm->name, built_in_names[i]))
-			return (*built_in[i])(comm->args);
+		if(!strcmp(comm.name, built_in_names[i]))
+			return (*built_in[i])(comm.args);
 	}
+
+	_tmp = _lookforinPATH(comm.name);
+	if(_tmp != NULL)
+		strcpy(comm.name, _tmp);
+	free(_tmp);
 
 	return exec_extern(comm);
 }
 
-int exec_extern(const command *comm)
+int exec_extern(const Command comm)
 {
 	errno = 0;
 	int status = 0, check = 0;
@@ -307,12 +358,12 @@ int exec_extern(const command *comm)
 	/* Child */
 	else if(pid == 0)
 	{
-		check = execvp(comm->name, comm->args);
+		check = execv(comm.name, comm.args);
 		
 		if(check == -1)
 		{
 			perror("Execution error");
-			return _FAIL;
+			exit(EXIT_FAILURE);
 		}
 	}
 	else
@@ -322,6 +373,44 @@ int exec_extern(const command *comm)
 	if(errno)
 		perror("Error");
 	return status;
+}
+
+string _lookforinPATH(string name)
+{
+	string cwd = calloc(PATH_MAX, sizeof(char));
+	getcwd(cwd, PATH_MAX - 256);
+	if(name[0] == '/')
+		return name;
+	else if(strstr(name, "./"))
+	{
+		strcat(cwd, name + 1);
+		return cwd;
+	}
+	DIR *directory;
+	struct dirent *entry;
+	string PATH = getenv("PATH"),
+		   *token;
+	int elements, i;
+	string _ret = calloc(PATH_MAX, sizeof(char));
+	token = _advtok(PATH, "", &elements, ":");
+	for(i = 0; i < elements; i++)
+	{
+		if(!(directory = opendir(strcat(token[i], "/"))))
+		{
+			perror("Error");
+			return NULL;
+		}
+		while((entry = readdir(directory)))
+		{
+			if(!strcmp(name, entry->d_name))
+			{
+				strcat(_ret, token[i]);
+				strcat(_ret, name);
+				return _ret;
+			}
+		}
+	}
+	return NULL;
 }
 
 int _ItemsCount(const string _items, const char _delimeters[])
@@ -337,10 +426,12 @@ int _ItemsCount(const string _items, const char _delimeters[])
     return ++_count;
 }
 
-string *_advtok(const string _source, const char _quotes[], int *_elements)
+string *_advtok(const string _source, const char _quotes[], int *_elements, string _delimeters)
 {
-	const char _delimeters[] = {' ', '\t', '\r', '\n', '\v', '\f', '\0'};
+	char _delim[] = {' ', '\t', '\r', '\n', '\v', '\f', '\0'};
 
+	if(!strcmp(_delimeters, ""))
+		_delimeters = _delim;
 	char *_current = _source,
 		 *_isQuote = NULL,
 		 *_lastQuote = NULL,
@@ -579,7 +670,7 @@ int microshell_help(char *args[])
 	printf("\x1B[29G");
 	printf(COLOR_IMPORTANT "Microshell (2018/2019)\n" COLOR_RESET);
 	printf(COLOR_HIDDEN "Author: " COLOR_RESET "Jakub Kwiatkowski" "\x1B[61G" COLOR_HIDDEN "version: " COLOR_RESET "2019.01.10\n");
-	printf("This Microshell is simple Linux/Unix shell. \nIt allows you to execute programs right here in command line.\n");
+	printf("This Microshell is simple Linux/Unix shell. \nIt allows you to execute programs right here in Command line.\n");
 	printf("Arguments can be quoted in" FONT_BOLD " \"\" or \'\'" COLOR_RESET ". Type " FONT_BOLD "exit" COLOR_RESET " to exit microshell.\nEnjoy your new supertool!\n");
 
 	return _SUCCESS;
@@ -779,7 +870,7 @@ int microshell_ls(char *args[])
 		memset(format, 0, 256);
 		memset(filepath, 0, PATH_MAX + 1);
 	}
-
+	closedir(directory);
 	free(format);
 	free(path);
 	free(filepath);
@@ -793,54 +884,50 @@ void microshell_touch_help()
 	printf(CLEAR_SCREEN);
 	printf(FONT_BOLD "Microshell touch help.\n" COLOR_RESET);
 	printf(COLOR_IMPORTANT "Command:\n" COLOR_RESET "\ttouch [path] [-h][content]\n");
+	printf("Create or modify files\n");
 	printf(FONT_BOLD "Options:\n" COLOR_RESET);
 	printf("\t-h | display this help\n");
 	printf(FONT_BOLD "Path:\n" COLOR_RESET);
 	printf("\tIf contains only filename file will be created in current directory\n");
 	printf("\telse (if possible) file will be created in given folder.\n");
-	printf(FONT_BOLD "Content:\n" COLOR_RESET);
-	printf("\tOptional content of created file. Have to be quoted in \"\" or \'\'\n");
-	printf("\tand cannot contain same quotes inside e.g. you can type \"My 'new' text\"\n");
-	printf("\tbut cannot \"My \"new\" text\".\n");
 }
 
 int microshell_touch(char *args[])
 {
 	errno = 0;
-	int fd, status, i;
-	if(!args[1])
-	{
-		perror("No filename");
-		return _FAIL;
-	}
+	int fd, status, i = 1;
+	time_t t;
+	struct timespec ts[2];
 
-	if(!strcmp(args[1], "-h"))
+	while(args[i] != NULL)
 	{
-		microshell_touch_help();
-		return _SUCCESS;
-	}
-
-	fd = open(args[1], O_WRONLY | O_CREAT | O_EXCL, 0666);
-	if(fd == -1)
-	{
-		perror("Cannot create file");
-		return _FAIL;
-	}
-	if(args[2] != NULL)
-		for(i = 0; i < strlen(args[2]); i++)
+		if(!strcmp(args[i], "-h"))
 		{
-			if((status = write(fd, &args[2][i], 1)) == -1)
+			microshell_touch_help();
+			return _SUCCESS;
+		}
+		else
+		{
+			fd = open(args[i], O_RDONLY | O_APPEND | O_CREAT, 0666);
+			if(fd == -1)
 			{
-				perror("Cannot write to file");
+				perror("Cannot create or open file");
+				return _FAIL;
+			}
+			ts[0].tv_sec = ts[1].tv_sec = time(&t);
+			if(futimens(fd, ts) == -1)
+				perror("Cannot change file properties");
+			memset(ts, 0, sizeof(ts));
+			status = close(fd);
+			if(status == -1)
+			{
+				perror("Cannot close file");
+				return _FAIL;
 			}
 		}
-		
-	status = close(fd);
-	if(status == -1)
-	{
-		perror("Cannot close file");
-		return _FAIL;
+		i++;
 	}
+	
 	if(errno)
 		perror("Error");
 	return _SUCCESS;
