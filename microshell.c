@@ -86,9 +86,6 @@ int exec_extern(const Command comm);
 /* Helper function searching in PATH for given program */
 string _lookforinPATH(string name);
 
-/* Helper function counting items divided by separator in string */
-int _ItemsCount(const string _items, const char _delimeters[]);
-
 /* Helper function that trim whitespaces around string */
 string __trimaround(const string _source);
 
@@ -106,8 +103,6 @@ int microshell_help(char *args[]);
 int microshell_ls(char *args[]);
 
 int microshell_touch(char *args[]);
-
-int microshell_ps(char *args[]);
 
 string built_in_names[] = 
 {
@@ -141,7 +136,10 @@ int main()
 	hostname = calloc(HOST_NAME_MAX + 1, sizeof(char));
 	input = calloc(PATH_MAX + 1, sizeof(char));
 	if(!username || !hostname || !input)
-		perror("Cannot allocate memory");
+	{
+		perror("Error");
+		goto END;
+	}
 
 	while(true)
 	{
@@ -151,15 +149,14 @@ int main()
 		{
 			continue;
 		}
-		printf("Before Invoke\n");
 		Invoke(comm);
-		printf("After Invoke\n");
 		memset(username, 0, LOGIN_NAME_MAX);
 		memset(hostname, 0, HOST_NAME_MAX);
 		memset(input, 0, PATH_MAX);
 		_commfree(&comm);
 	}
 
+	END:
 	free(username);
 	free(hostname);
 	free(input);
@@ -195,33 +192,6 @@ int _commalloc(Command *comm, const int argsCount)
 
 	return _SUCCESS;
 }
-
-/*int _commrealloc(Command *comm, const int argsAdded)
-{
-	int i = 0;
-	int args = comm->elements + argsAdded;
-
-	if(args > 255)
-	{
-		printf("Too many arguments. Limit is 255.\n");
-		return _FAIL;
-	}
-
-	for(i = comm->elements; i < args; i++)
-	{
-		comm->args[i] = calloc(_STRING_WORD_SIZE + 1, sizeof(char));
-		if(!comm->args[i])
-		{
-			perror("Allocation error occured");
-			return _FAIL;
-		}
-	}
-	
-	comm->elements = args;
-
-	return _SUCCESS;
-	
-}*/
 
 int _commfree(Command *_source)
 {
@@ -411,19 +381,6 @@ string _lookforinPATH(string name)
 		}
 	}
 	return NULL;
-}
-
-int _ItemsCount(const string _items, const char _delimeters[])
-{
-    int length = strlen(_items), _count = 0, i = 0;
-    char current = 0;
-    for(i = 0; i < length; i++)
-    {
-        current = _items[i];
-        if(strchr(_delimeters, current) != NULL)
-            _count++;
-    }
-    return ++_count;
 }
 
 string *_advtok(const string _source, const char _quotes[], int *_elements, string _delimeters)
@@ -883,13 +840,14 @@ void microshell_touch_help()
 {
 	printf(CLEAR_SCREEN);
 	printf(FONT_BOLD "Microshell touch help.\n" COLOR_RESET);
-	printf(COLOR_IMPORTANT "Command:\n" COLOR_RESET "\ttouch [path] [-h][content]\n");
-	printf("Create or modify files\n");
+	printf(COLOR_IMPORTANT "Command:\n" COLOR_RESET "\ttouch [path]/[-h]\n");
+	printf("\tCreate or modify files\n");
 	printf(FONT_BOLD "Options:\n" COLOR_RESET);
 	printf("\t-h | display this help\n");
 	printf(FONT_BOLD "Path:\n" COLOR_RESET);
 	printf("\tIf contains only filename file will be created in current directory\n");
 	printf("\telse (if possible) file will be created in given folder.\n");
+	printf("\tIf file already exist changes its modification date.\n");
 }
 
 int microshell_touch(char *args[])
